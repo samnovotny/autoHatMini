@@ -13,7 +13,7 @@ enum I2CError : Error {
     case readError
 }
 
-/// ADC setting bits
+/// ADS1015 setting bits
 //
 internal let SAMPLES_PER_SECOND_MAP: Dictionary<Int, UInt16> = [128: 0x0000, 250: 0x0020, 490: 0x0040, 920: 0x0060, 1600: 0x0080, 2400: 0x00A0, 3300: 0x00C0]
 internal let CHANNEL_MAP: Dictionary<Int, UInt16> = [0: 0x4000, 1: 0x5000, 2: 0x6000]
@@ -24,12 +24,17 @@ internal let PROGRAMMABLE_GAIN_MAP: Dictionary<Int, UInt16> = [6144: 0x0000, 409
 internal let samplesPerSecond = 1600
 internal let programmableGain = 4096
 
-/// Description
+/// I2C object to handle the ADS1015 ADC
+//
 class I2CIo {
     
     let fd: Int32
     let address: Int
-
+    
+    /// Intitialiser
+    /// - Parameter address: Hex address to which the device is hardwired
+    /// - Parameter device: Linux device string identifying the port
+    //    
     init?(address: Int, device: String) {
         self.address = address
         self.fd = open(device, O_RDWR)
@@ -41,7 +46,7 @@ class I2CIo {
         close(self.fd)
     }
     
-    /// Select the I2c slave for forthoming trasition.
+    /// Select the I2c slave for forthoming transmision.
     
     private func selectDevice() throws {
         let io = ioctl(self.fd, UInt(I2C_SLAVE), CInt(self.address))
@@ -68,19 +73,24 @@ class I2CIo {
         print ("\(#function) - \(channel)", terminator: " ")
  
         try selectDevice()
-
+        
+        /// Configure ADC to read and trigger conversion
         let io = i2c_smbus_write_word_data(self.fd, 0, getConfig(channel: channel))
         guard io != -1 else {throw I2CError.writeError}
         
+        /// Wait a bit
         let delay = (1.0 / 1600.0) + 0.0001
         Thread.sleep(forTimeInterval: delay)
-
+        
+        /// Get the data and shift right four
         let readData = i2c_smbus_read_word_data(self.fd, 0)        
         guard readData != -1 else {throw I2CError.readError}
-
         let intValue = Int(readData >> 4)
+        
         print( "intValue(\(intValue)) = \(intValue.binaryWord())")
         
+        
+        /// Scale the conversion
         let result = Float(intValue) / 2047.0 * Float(programmableGain) / 3300.0        
         return (result)
     }
