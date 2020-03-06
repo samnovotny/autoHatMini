@@ -13,6 +13,17 @@ enum I2CError : Error {
     case readError
 }
 
+/// ADC setting bits
+//
+internal let SAMPLES_PER_SECOND_MAP: Dictionary<Int, UInt16> = [128: 0x0000, 250: 0x0020, 490: 0x0040, 920: 0x0060, 1600: 0x0080, 2400: 0x00A0, 3300: 0x00C0]
+internal let CHANNEL_MAP: Dictionary<Int, UInt16> = [0: 0x4000, 1: 0x5000, 2: 0x6000]
+internal let PROGRAMMABLE_GAIN_MAP: Dictionary<Int, UInt16> = [6144: 0x0000, 4096: 0x0200, 2048: 0x0400, 1024: 0x0600, 512: 0x0800, 256: 0x0A00]
+
+/// Constants for this device / application
+//
+internal let samplesPerSecond = 1600
+internal let programmableGain = 4096
+
 /// Description
 class I2CIo {
     
@@ -37,14 +48,17 @@ class I2CIo {
         guard io != -1 else {throw I2CError.ioctlError}
     }
     
-    /// Create mask to set the ADC
-    /// - Parameter ch: The channel (1-3) indexed (0-2) to generate the mask for
+    /// Create the mask to set the ADC
+    /// - Parameter channel: The channel (1-3) to generate the mask for
+    
+    private func getConfig(channel: Int) -> UInt16 {
+        var config: UInt16 = 0x8000 | 0x0003 | 0x0100
+        config |= SAMPLES_PER_SECOND_MAP[samplesPerSecond]!
+        config |= PROGRAMMABLE_GAIN_MAP[programmableGain]!
+        config |= CHANNEL_MAP[channel-1]!
 
-    func config(ch: Int) -> UInt16 {
-        let channels: [UInt16] = [0x4000, 0x5000, 0x6000]
-        let config: UInt16 = 0x0003 | 0x0100 | 0x0080 | 0x0200 | 0x8000 | channels[ch]
-
-        return(config)
+        print("config = \(Int(config).hex16()),\(Int(config).binaryWord())")
+        return config
     }
     
     /// Read the ADC for the given channel
@@ -55,7 +69,7 @@ class I2CIo {
  
         try selectDevice()
 
-        let io = i2c_smbus_write_word_data(self.fd, 0, config(ch: channel))
+        let io = i2c_smbus_write_word_data(self.fd, 0, getConfig(channel: channel))
         guard io != -1 else {throw I2CError.writeError}
         
         let delay = (1.0 / 1600.0) + 0.0001
@@ -67,8 +81,7 @@ class I2CIo {
         let intValue = Int(readData >> 4)
         print( "intValue(\(intValue)) = \(intValue.binaryWord())")
         
-        let result = Float(intValue) / 2047.0 * 4096.0 / 3.3
-        
+        let result = Float(intValue) / 2047.0 * Float(programmableGain) / 3300.0        
         return (result)
     }
 }

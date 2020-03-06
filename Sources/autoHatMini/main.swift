@@ -9,7 +9,7 @@ let adc = I2CIo(address: deviceAddress, device: portString)
 
 while true {
     do {
-        for n in 0...2 {
+        for n in 1...3 {
             if let value = try adc?.readADC(channel: n) {
                 print("adc(\(n)) = \(String(format: "%0.2f", value))")
             }
