@@ -24,10 +24,14 @@ internal let PROGRAMMABLE_GAIN_MAP: Dictionary<Int, UInt16> = [6144: 0x0000, 409
 //
 internal let samplesPerSecond = 1600
 internal let programmableGain = 4096
+internal let maxVoltage: Float = 25.85
+
+internal let ADS_1015_CONGIG_REG: UInt8 = 1
+internal let ADS_1015_CONVERSION_REG: UInt8 = 0
 
 /// I2C object to handle the ADS1015 ADC
 //
-class I2CIo {
+class ADS1015 {
     
     let fd: Int32
     let address: Int
@@ -36,7 +40,7 @@ class I2CIo {
     /// - Parameter address: Hex address to which the device is hardwired
     /// - Parameter device: Linux device string identifying the port
     //    
-    init?(address: Int, device: String) {
+    init?(address: Int = 0x48, device: String = "/dev/i2c-1") {
         self.address = address
         self.fd = open(device, O_RDWR)
         guard self.fd > 0 else { return nil }
@@ -49,7 +53,7 @@ class I2CIo {
     
     /// Select the I2c slave for forthoming transmision.
     
-    private func selectDevice() throws {
+    private func setSlave() throws {
         let io = ioctl(self.fd, UInt(I2C_SLAVE), CInt(self.address))
         guard io != -1 else {throw I2CError.ioctlError}
     }
@@ -63,7 +67,7 @@ class I2CIo {
         config |= PROGRAMMABLE_GAIN_MAP[programmableGain]!
         config |= CHANNEL_MAP[channel-1]!
 
-        print("config = \(Int(config).hex16()),\(Int(config).binaryWord())")
+//        print("config = \(Int(config).hex16()),\(Int(config).binaryWord())")
         return config
     }
     
@@ -71,28 +75,41 @@ class I2CIo {
     /// - Parameter channel: select the channel to run the ADC for
     //
     func readADC(channel: Int) throws -> Float {
-        print ("\(#function) - \(channel)", terminator: " ")
+//        print ("\(#function) - \(channel)", terminator: " ")
  
-        try selectDevice()
-        
-        /// Configure ADC to read and trigger conversion
-        let io = i2c_smbus_write_word_data(fd: self.fd,command:  0,word:  getConfig(channel: channel))
+        //  Set address pointer register to Config register AND write the config
+        try setSlave()
+        var configBuffer = [UInt8] (repeating: 0, count: 3)
+        configBuffer[0] = ADS_1015_CONGIG_REG
+        let config = getConfig(channel: channel)
+        configBuffer[1] = UInt8(config >> 8)
+        configBuffer[2] = UInt8(config & 0xff)
+        var io = write(self.fd, &configBuffer, configBuffer.count)
         guard io != -1 else {throw I2CError.writeError}
-        
+
         /// Wait a bit
-        let delay = (1.0 / 1600.0) + 0.0001
+        let delay = (1.0 / Double(samplesPerSecond)) + 0.0001
         Thread.sleep(forTimeInterval: delay)
-        
-        /// Get the data and shift right four
-        let readData = i2c_smbus_read_word_data(fd: self.fd, command: 0)        
-        guard readData != -1 else {throw I2CError.readError}
-        let intValue = Int(readData >> 4)
-        
-        print( "intValue(\(intValue)) = \(intValue.binaryWord())")
-        
+
+        //  Set address pointer register to Conversion register
+        try setSlave()
+        var pointerBuffer = [UInt8] (repeating: 0, count: 1)
+        pointerBuffer[0] = ADS_1015_CONVERSION_REG
+        io = write(self.fd, &pointerBuffer, pointerBuffer.count)
+        guard io != -1 else {throw I2CError.writeError}
+
+        // Read Conversion Register
+        var conversionBuffer = [UInt8] (repeating: 0, count: 2)
+        io = read(self.fd, &conversionBuffer, conversionBuffer.count)
+        guard io != -1 else {throw I2CError.readError}
         
         /// Scale the conversion
-        let result = Float(intValue) / 2047.0 * Float(programmableGain) / 3300.0        
+//        print("[0]=\(Int(conversionBuffer[0]).hex8()), [1]=\(Int(conversionBuffer[1]).hex8())")
+        let intValue = Int((UInt16(conversionBuffer[0]) << 4) | UInt16(conversionBuffer[1] >> 4))
+//        print( "intValue = \(intValue), 0x\(intValue.hex16()), \(intValue.binaryWord())")
+        let floatValue = (intValue & 0x800) == 0 ? Float(intValue) : Float(intValue - 4096)
+//        print( "floatValue = \(floatValue)")
+        let result = floatValue / 2047.0 * Float(programmableGain) / 3300.0 * maxVoltage
         return (result)
     }
     
@@ -101,14 +118,19 @@ class I2CIo {
     func readConfig() throws -> UInt16 {
         print ("\(#function)")
         
-        try selectDevice()
-        
-        let io = i2c_smbus_write_byte_data(fd: self.fd, command: 0, byte: 1)
+        //  Set address pointer register to Config register
+        try setSlave()
+        var pointerBuffer = [UInt8] (repeating: 0, count: 1)
+        pointerBuffer[0] = ADS_1015_CONGIG_REG
+        var io = write(self.fd, &pointerBuffer, pointerBuffer.count)
         guard io != -1 else {throw I2CError.writeError}
         
-        let readData = i2c_smbus_read_word_data(fd: self.fd, command: 0)
-        guard readData != -1 else {throw I2CError.readError}
-        return(UInt16(readData))
+        // Read Config Register
+        var configBuffer = [UInt8] (repeating: 0, count: 2)
+        io = read(self.fd, &configBuffer, configBuffer.count)
+        guard io != -1 else {throw I2CError.readError}
+        let result = (UInt16(configBuffer[0]) << 8) | UInt16(configBuffer[1])
+        return(result)
     }
 }
 
