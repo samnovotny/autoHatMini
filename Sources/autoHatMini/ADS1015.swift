@@ -1,5 +1,5 @@
 //
-//  I2CIo.swift
+//  ADC1015.swift
 //  
 //
 //  Created by Sam Novotny on 24/02/2020.
@@ -7,12 +7,13 @@
 
 import Foundation
 
+/// Thrown IO errors
+//
 enum I2CError : Error {
     case ioctlError
     case writeError
     case readError
 }
-
 
 /// ADS1015 setting bits
 //
@@ -26,6 +27,7 @@ internal let samplesPerSecond = 1600
 internal let programmableGain = 4096
 internal let maxVoltage: Float = 25.85
 
+internal let I2C_SLAVE: UInt = 0x703
 internal let ADS_1015_CONGIG_REG: UInt8 = 1
 internal let ADS_1015_CONVERSION_REG: UInt8 = 0
 
