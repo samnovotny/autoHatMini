@@ -13,6 +13,7 @@ enum I2CError : Error {
     case readError
 }
 
+
 /// ADS1015 setting bits
 //
 internal let SAMPLES_PER_SECOND_MAP: Dictionary<Int, UInt16> = [128: 0x0000, 250: 0x0020, 490: 0x0040, 920: 0x0060, 1600: 0x0080, 2400: 0x00A0, 3300: 0x00C0]
@@ -68,14 +69,14 @@ class I2CIo {
     
     /// Read the ADC for the given channel
     /// - Parameter channel: select the channel to run the ADC for
-    
+    //
     func readADC(channel: Int) throws -> Float {
         print ("\(#function) - \(channel)", terminator: " ")
  
         try selectDevice()
         
         /// Configure ADC to read and trigger conversion
-        let io = i2c_smbus_write_word_data(self.fd, 0, getConfig(channel: channel))
+        let io = i2c_smbus_write_word_data(fd: self.fd,command:  0,word:  getConfig(channel: channel))
         guard io != -1 else {throw I2CError.writeError}
         
         /// Wait a bit
@@ -83,7 +84,7 @@ class I2CIo {
         Thread.sleep(forTimeInterval: delay)
         
         /// Get the data and shift right four
-        let readData = i2c_smbus_read_word_data(self.fd, 0)        
+        let readData = i2c_smbus_read_word_data(fd: self.fd, command: 0)        
         guard readData != -1 else {throw I2CError.readError}
         let intValue = Int(readData >> 4)
         
@@ -93,6 +94,21 @@ class I2CIo {
         /// Scale the conversion
         let result = Float(intValue) / 2047.0 * Float(programmableGain) / 3300.0        
         return (result)
+    }
+    
+    /// Read the configuration register
+    //
+    func readConfig() throws -> UInt16 {
+        print ("\(#function)")
+        
+        try selectDevice()
+        
+        let io = i2c_smbus_write_byte_data(fd: self.fd, command: 0, byte: 1)
+        guard io != -1 else {throw I2CError.writeError}
+        
+        let readData = i2c_smbus_read_word_data(fd: self.fd, command: 0)
+        guard readData != -1 else {throw I2CError.readError}
+        return(UInt16(readData))
     }
 }
 
